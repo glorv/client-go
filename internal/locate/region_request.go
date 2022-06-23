@@ -38,6 +38,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -518,6 +519,7 @@ type accessFollower struct {
 	option            storeSelectorOp
 	leaderIdx         AccessIndex
 	lastIdx           AccessIndex
+	adaptive          bool
 }
 
 func (state *accessFollower) next(bo *retry.Backoffer, selector *replicaSelector) (*RPCContext, error) {
@@ -527,11 +529,46 @@ func (state *accessFollower) next(bo *retry.Backoffer, selector *replicaSelector
 		} else {
 			if len(selector.replicas) <= 1 {
 				state.lastIdx = state.leaderIdx
-			} else {
+			} else if !state.adaptive{
 				// Randomly select a non-leader peer
 				state.lastIdx = AccessIndex(rand.Intn(len(selector.replicas) - 1))
 				if state.lastIdx >= state.leaderIdx {
 					state.lastIdx++
+				}
+			} else {
+				type preferedIdx struct {
+					idx AccessIndex
+					isPrefered bool
+				}
+				candidates := make([]preferedIdx, 0)
+				for i := 0; i < len(selector.replicas); i++ {
+					if !state.isCandidate(AccessIndex(i), selector.replicas[i]) {
+						continue
+					}
+					candidates = append(candidates, preferedIdx{AccessIndex(i), selector.replicas[i].store.IsLabelsMatch(state.option.preferredLabels)})
+				}
+				if len(candidates) == 1 {
+					state.lastIdx = candidates[0].idx
+				} else {
+					stats := make([]uint64, 0, len(candidates))
+					avg := uint64(0)
+					for _, c := range candidates {
+						val := selector.replicas[c.idx].store.latencyStats.getLatestStats(time.Now()).WeightedAvg()
+						stats = append(stats, val)
+						avg += val
+					}
+					avg /= uint64(len(stats))
+					sort.Slice(candidates, func(i, j int) bool {
+						if candidates[i].isPrefered && candidates[j].isPrefered {
+							return stats[i] < stats[j]
+						}
+						return candidates[i].isPrefered && !candidates[j].isPrefered
+					})
+					if stats[0] <= 5 || stats[0] < avg * 6 / 5 {
+						state.lastIdx = candidates[0].idx
+					} else {
+						state.lastIdx = state.leaderIdx
+					}
 				}
 			}
 		}
@@ -1050,9 +1087,23 @@ func (s *RegionRequestSender) SendReqCtx(
 			if s.replicaSelector != nil {
 				s.replicaSelector.onSendSuccess()
 			}
+			if waitTime, ok := getRespWaitTime(resp); ok {
+				rpcCtx.Store.latencyStats.observe(time.Now(), uint64(waitTime))
+			}
 		}
 		return resp, rpcCtx, nil
 	}
+}
+
+func getRespWaitTime(resp *tikvrpc.Response) (int64, bool) {
+	if copResp, ok := resp.Resp.(*coprocessor.Response); ok {
+		if copResp.ExecDetailsV2 != nil {
+			return copResp.ExecDetailsV2.TimeDetail.WaitWallTimeMs, true
+		} else if copResp.ExecDetails != nil {
+			return copResp.ExecDetails.TimeDetail.WaitWallTimeMs, true
+		}
+	}
+	return 0, false
 }
 
 // RPCCancellerCtxKey is context key attach rpc send cancelFunc collector to ctx.

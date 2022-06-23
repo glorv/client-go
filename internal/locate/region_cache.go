@@ -528,6 +528,8 @@ func (c *RPCContext) String() string {
 type storeSelectorOp struct {
 	leaderOnly bool
 	labels     []*metapb.StoreLabel
+	// preferredLabels is like labels, but the match is not forced.
+	preferredLabels []*metapb.StoreLabel
 }
 
 // StoreSelectorOption configures storeSelectorOp.
@@ -537,6 +539,12 @@ type StoreSelectorOption func(*storeSelectorOp)
 func WithMatchLabels(labels []*metapb.StoreLabel) StoreSelectorOption {
 	return func(op *storeSelectorOp) {
 		op.labels = append(op.labels, labels...)
+	}
+}
+
+func WithPreferredLabels(labels []*metapb.StoreLabel) StoreSelectorOption {
+	return func(op *storeSelectorOp) {
+		op.preferredLabels = append(op.preferredLabels, labels...)
 	}
 }
 
@@ -2164,6 +2172,7 @@ type Store struct {
 	// this mechanism is currently only applicable for TiKV stores.
 	livenessState    uint32
 	unreachableSince time.Time
+	latencyStats     latencyStats
 }
 
 type resolveState uint64
