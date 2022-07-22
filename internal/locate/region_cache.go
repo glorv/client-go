@@ -121,11 +121,12 @@ const (
 
 // Region presents kv region
 type Region struct {
-	meta          *metapb.Region // raw region meta from PD, immutable after init
-	store         unsafe.Pointer // point to region store info, see RegionStore
-	syncFlag      int32          // region need be sync in next turn
-	lastAccess    int64          // last region access time, see checkRegionCacheTTL
-	invalidReason InvalidReason  // the reason why the region is invalidated
+	meta             *metapb.Region         // raw region meta from PD, immutable after init
+	store            unsafe.Pointer         // point to region store info, see RegionStore
+	syncFlag         int32                  // region need be sync in next turn
+	lastAccess       int64                  // last region access time, see checkRegionCacheTTL
+	invalidReason    InvalidReason          // the reason why the region is invalidated
+	closestReadStats regionLocalReadChecker // track the traffic percent that should read from closest replica
 }
 
 // AccessIndex represent the index for accessIndex array
@@ -536,8 +537,9 @@ func (c *RPCContext) String() string {
 }
 
 type storeSelectorOp struct {
-	leaderOnly bool
-	labels     []*metapb.StoreLabel
+	leaderOnly      bool
+	labels          []*metapb.StoreLabel
+	preferredLabels []*metapb.StoreLabel
 }
 
 // StoreSelectorOption configures storeSelectorOp.
@@ -547,6 +549,11 @@ type StoreSelectorOption func(*storeSelectorOp)
 func WithMatchLabels(labels []*metapb.StoreLabel) StoreSelectorOption {
 	return func(op *storeSelectorOp) {
 		op.labels = append(op.labels, labels...)
+	}
+}
+func WithPreferredLabels(labels []*metapb.StoreLabel) StoreSelectorOption {
+	return func(op *storeSelectorOp) {
+		op.preferredLabels = append(op.preferredLabels, labels...)
 	}
 }
 
@@ -2180,6 +2187,7 @@ type Store struct {
 	// this mechanism is currently only applicable for TiKV stores.
 	livenessState    uint32
 	unreachableSince time.Time
+	loadStats        storeLoadStats
 }
 
 type resolveState uint64

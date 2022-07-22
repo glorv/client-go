@@ -38,6 +38,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -520,12 +521,86 @@ type accessFollower struct {
 	option            storeSelectorOp
 	leaderIdx         AccessIndex
 	lastIdx           AccessIndex
+	adaptive          bool
 }
+
+const closestReadLowCpuThreshold float64 = 0.7
 
 func (state *accessFollower) next(bo *retry.Backoffer, selector *replicaSelector) (*RPCContext, error) {
 	if state.lastIdx < 0 {
 		if state.tryLeader {
-			state.lastIdx = AccessIndex(rand.Intn(len(selector.replicas)))
+			if !state.adaptive || len(selector.replicas) <= 1 {
+				state.lastIdx = AccessIndex(rand.Intn(len(selector.replicas)))
+			} else {
+				type preferedIdx struct {
+					idx        AccessIndex
+					isPrefered bool
+					cpuPercent float64
+				}
+				candidates := make([]preferedIdx, 0)
+				minLoad := 1.0
+				maxLoad := 0.0
+				for i, r := range selector.replicas {
+					if !state.isCandidate(AccessIndex(i), r) {
+						continue
+					}
+					stats := r.store.loadStats.Load()
+					cpuPercent := 0.0
+					if stats != nil {
+						cpuPercent = stats.cpuPercent
+					}
+					if minLoad > cpuPercent {
+						minLoad = cpuPercent
+					}
+					if maxLoad < cpuPercent {
+						maxLoad = cpuPercent
+					}
+					candidates = append(candidates, preferedIdx{AccessIndex(i), r.store.IsLabelsMatch(state.option.preferredLabels), cpuPercent})
+				}
+
+				sort.Slice(candidates, func(i, j int) bool {
+					if candidates[i].isPrefered && candidates[j].isPrefered {
+						return candidates[i].cpuPercent < candidates[j].cpuPercent
+					}
+					return candidates[i].isPrefered && !candidates[j].isPrefered
+				})
+				candidate := candidates[0]
+				if candidate.cpuPercent < closestReadLowCpuThreshold {
+					state.lastIdx = candidate.idx
+				} else {
+					// 1 stand for 1%
+					delta := 0
+					if minLoad == 0.0 {
+						// if the minLoad is unknown, schedule 1% traffic then
+						delta = 1
+					} else if candidate.cpuPercent > minLoad*6/5 {
+						if minLoad > 0 {
+							delta = int((candidate.cpuPercent - minLoad) * 10 / minLoad)
+						}
+						if delta > 10 {
+							delta = 10
+						}
+					} else if candidate.cpuPercent < maxLoad*4/5 {
+						delta = int((candidate.cpuPercent - maxLoad) * 10 / maxLoad)
+						if delta < -5 {
+							delta = -5
+						}
+					}
+
+					stats := make([]float64, 0, len(candidates))
+					for _, c := range candidates {
+						stats = append(stats, c.cpuPercent)
+					}
+					if selector.region.closestReadStats.ShouldClosestRead(delta, selector.region.meta.Id, stats) {
+						state.lastIdx = candidates[0].idx
+					} else {
+						state.lastIdx = state.leaderIdx
+					}
+				}
+
+				// logutil.BgLogger().Info("get next replica end", zap.Bool("adaptive", state.adaptive), zap.Int("perfered_labels", len(state.option.preferredLabels)),
+				// 	zap.Int("candidates", len(candidates)), zap.Any("opts", state.option.labels))
+			}
 		} else {
 			if len(selector.replicas) <= 1 {
 				state.lastIdx = state.leaderIdx
@@ -641,6 +716,7 @@ func newReplicaSelector(regionCache *RegionCache, regionID RegionVerID, req *tik
 			option:            option,
 			leaderIdx:         regionStore.workTiKVIdx,
 			lastIdx:           -1,
+			adaptive:          len(option.preferredLabels) > 0,
 		}
 	}
 
@@ -1013,6 +1089,14 @@ func (s *RegionRequestSender) SendReqCtx(
 			}
 		}
 
+		//logutil.BgLogger().Info("track store load", zap.Bool("track", config.GetGlobalConfig().TrackStoreLoad))
+		lastCheckTime := rpcCtx.Store.loadStats.GetLastCheckTime()
+		now := time.Now()
+		if now.Sub(lastCheckTime) >= 1*time.Second { // 500*time.Millisecond {
+			req.RecordLoadStats = true
+			rpcCtx.Store.loadStats.UpdateLastCheckTs(now)
+		}
+
 		var retry bool
 		resp, retry, err = s.sendReqToRegion(bo, rpcCtx, req, timeout)
 		if err != nil {
@@ -1052,9 +1136,32 @@ func (s *RegionRequestSender) SendReqCtx(
 			if s.replicaSelector != nil {
 				s.replicaSelector.onSendSuccess()
 			}
+			if detail, ok := getRespLoadDetails(resp); ok {
+				cpuTotal := detail.cpuTotal
+				cpuPercent := detail.cpuPercent
+				rpcCtx.Store.loadStats.Update(detail)
+				newStat := rpcCtx.Store.loadStats.Load()
+				logutil.BgLogger().Info("update store detail", zap.String("store", rpcCtx.Store.addr),
+					zap.Float64("cup_total", cpuTotal), zap.Float64("cup_percent", cpuPercent),
+					zap.Float64("new_total", newStat.cpuTotal), zap.Float64("new_percent", newStat.cpuPercent))
+			}
 		}
 		return resp, rpcCtx, nil
 	}
+}
+
+func getRespLoadDetails(resp *tikvrpc.Response) (*loadStats, bool) {
+	if copResp, ok := resp.Resp.(*coprocessor.Response); ok && copResp != nil {
+		if copResp.LoadDetails != nil {
+			detail := copResp.LoadDetails
+			return &loadStats{
+				cpuPercent:  detail.AvgCpuLoad,
+				cpuTotal:    detail.CpuTotal,
+				updatedTime: time.Now().UnixNano(),
+			}, true
+		}
+	}
+	return nil, false
 }
 
 // RPCCancellerCtxKey is context key attach rpc send cancelFunc collector to ctx.

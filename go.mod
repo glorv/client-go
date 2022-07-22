@@ -35,3 +35,5 @@ require (
 	google.golang.org/grpc v1.43.0
 	stathat.com/c/consistent v1.0.0 // indirect
 )
+
+replace github.com/pingcap/kvproto => github.com/glorv/kvproto v0.0.0-20220715084445-4091cf078306
