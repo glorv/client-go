@@ -538,8 +538,7 @@ func (state *accessFollower) next(bo *retry.Backoffer, selector *replicaSelector
 					cpuPercent float64
 				}
 				candidates := make([]preferedIdx, 0)
-				minLoad := 1.0
-				maxLoad := 0.0
+				leaderLoad := 0.0
 				for i, r := range selector.replicas {
 					if !state.isCandidate(AccessIndex(i), r) {
 						continue
@@ -549,11 +548,8 @@ func (state *accessFollower) next(bo *retry.Backoffer, selector *replicaSelector
 					if stats != nil {
 						cpuPercent = stats.cpuPercent
 					}
-					if minLoad > cpuPercent {
-						minLoad = cpuPercent
-					}
-					if maxLoad < cpuPercent {
-						maxLoad = cpuPercent
+					if i == int(state.leaderIdx) {
+						leaderLoad = cpuPercent
 					}
 					candidates = append(candidates, preferedIdx{AccessIndex(i), r.store.IsLabelsMatch(state.option.preferredLabels), cpuPercent})
 				}
@@ -570,27 +566,22 @@ func (state *accessFollower) next(bo *retry.Backoffer, selector *replicaSelector
 				} else {
 					// 1 stand for 1%
 					delta := 0
-					if minLoad == 0.0 {
-						// if the minLoad is unknown, schedule 1% traffic then
+					if leaderLoad == 0.0 {
+						// if the leader's load is unknown, schedule 1% traffic then
 						delta = 1
-					} else if candidate.cpuPercent > minLoad*6/5 {
-						if minLoad > 0 {
-							delta = int((candidate.cpuPercent - minLoad) * 10 / minLoad)
-						}
+					} else if candidate.cpuPercent > leaderLoad*6/5 {
+						delta = int((candidate.cpuPercent - leaderLoad) * 8 / leaderLoad)
 						if delta > 10 {
 							delta = 10
 						}
-					} else if candidate.cpuPercent < maxLoad*4/5 {
-						delta = int((candidate.cpuPercent - maxLoad) * 10 / maxLoad)
+					} else if candidate.cpuPercent < leaderLoad*4/5 {
+						delta = int((candidate.cpuPercent - leaderLoad) * 5 / leaderLoad)
 						if delta < -5 {
 							delta = -5
 						}
 					}
 
-					stats := make([]float64, 0, len(candidates))
-					for _, c := range candidates {
-						stats = append(stats, c.cpuPercent)
-					}
+					stats := []float64{candidate.cpuPercent, leaderLoad}
 					if selector.region.closestReadStats.ShouldClosestRead(delta, selector.region.meta.Id, stats) {
 						state.lastIdx = candidates[0].idx
 					} else {
