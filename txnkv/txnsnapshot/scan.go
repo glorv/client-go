@@ -231,6 +231,7 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 				IsolationLevel:   s.snapshot.isolationLevel.ToPB(),
 				ResourceGroupTag: s.snapshot.mu.resourceGroupTag,
 				RequestSource:    s.snapshot.GetRequestSource(),
+				GroupName:        s.snapshot.mu.groupName,
 			},
 			StartKey:   s.nextStartKey,
 			EndKey:     reqEndKey,
@@ -252,6 +253,7 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 			ResourceGroupTag: s.snapshot.mu.resourceGroupTag,
 			IsolationLevel:   s.snapshot.isolationLevel.ToPB(),
 			RequestSource:    s.snapshot.GetRequestSource(),
+			GroupName:        s.snapshot.mu.groupName,
 		})
 		if s.snapshot.mu.resourceGroupTag == nil && s.snapshot.mu.resourceGroupTagger != nil {
 			s.snapshot.mu.resourceGroupTagger(req)

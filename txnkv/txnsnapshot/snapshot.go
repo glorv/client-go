@@ -146,6 +146,7 @@ type KVSnapshot struct {
 		resourceGroupTagger tikvrpc.ResourceGroupTagger
 		// interceptor is used to decorate the RPC request logic related to the snapshot.
 		interceptor interceptor.RPCInterceptor
+		groupName   string
 	}
 	sampleStep uint32
 	*util.RequestSource
@@ -381,6 +382,7 @@ func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, 
 			ResourceGroupTag: s.mu.resourceGroupTag,
 			IsolationLevel:   s.isolationLevel.ToPB(),
 			RequestSource:    s.GetRequestSource(),
+			GroupName:        s.mu.groupName,
 		})
 		if s.mu.resourceGroupTag == nil && s.mu.resourceGroupTagger != nil {
 			s.mu.resourceGroupTagger(req)
@@ -584,6 +586,7 @@ func (s *KVSnapshot) get(ctx context.Context, bo *retry.Backoffer, k []byte) ([]
 			ResourceGroupTag: s.mu.resourceGroupTag,
 			IsolationLevel:   s.isolationLevel.ToPB(),
 			RequestSource:    s.GetRequestSource(),
+			GroupName:        s.mu.groupName,
 		})
 	if s.mu.resourceGroupTag == nil && s.mu.resourceGroupTagger != nil {
 		s.mu.resourceGroupTagger(req)
@@ -830,6 +833,12 @@ func (s *KVSnapshot) SetResourceGroupTagger(tagger tikvrpc.ResourceGroupTagger) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.mu.resourceGroupTagger = tagger
+}
+
+func (s *KVSnapshot) SetResourceGroupName(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mu.groupName = name
 }
 
 // SetRPCInterceptor sets interceptor.RPCInterceptor for the snapshot.
