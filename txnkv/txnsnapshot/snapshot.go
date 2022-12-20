@@ -376,13 +376,13 @@ func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, 
 			Keys:    pending,
 			Version: s.version,
 		}, s.mu.replicaRead, &s.replicaReadSeed, kvrpcpb.Context{
-			Priority:         s.priority.ToPB(),
-			NotFillCache:     s.notFillCache,
-			TaskId:           s.mu.taskID,
-			ResourceGroupTag: s.mu.resourceGroupTag,
-			IsolationLevel:   s.isolationLevel.ToPB(),
-			RequestSource:    s.GetRequestSource(),
-			GroupName:        s.mu.groupName,
+			Priority:          s.priority.ToPB(),
+			NotFillCache:      s.notFillCache,
+			TaskId:            s.mu.taskID,
+			ResourceGroupTag:  s.mu.resourceGroupTag,
+			IsolationLevel:    s.isolationLevel.ToPB(),
+			RequestSource:     s.GetRequestSource(),
+			ResourceGroupName: s.mu.groupName,
 		})
 		if s.mu.resourceGroupTag == nil && s.mu.resourceGroupTagger != nil {
 			s.mu.resourceGroupTagger(req)
@@ -580,13 +580,13 @@ func (s *KVSnapshot) get(ctx context.Context, bo *retry.Backoffer, k []byte) ([]
 			Key:     k,
 			Version: s.version,
 		}, s.mu.replicaRead, &s.replicaReadSeed, kvrpcpb.Context{
-			Priority:         s.priority.ToPB(),
-			NotFillCache:     s.notFillCache,
-			TaskId:           s.mu.taskID,
-			ResourceGroupTag: s.mu.resourceGroupTag,
-			IsolationLevel:   s.isolationLevel.ToPB(),
-			RequestSource:    s.GetRequestSource(),
-			GroupName:        s.mu.groupName,
+			Priority:          s.priority.ToPB(),
+			NotFillCache:      s.notFillCache,
+			TaskId:            s.mu.taskID,
+			ResourceGroupTag:  s.mu.resourceGroupTag,
+			IsolationLevel:    s.isolationLevel.ToPB(),
+			RequestSource:     s.GetRequestSource(),
+			ResourceGroupName: s.mu.groupName,
 		})
 	if s.mu.resourceGroupTag == nil && s.mu.resourceGroupTagger != nil {
 		s.mu.resourceGroupTagger(req)
