@@ -499,8 +499,8 @@ type sendReqCounterCacheKey struct {
 }
 
 type rpcNetLatencyCacheKey struct {
-	storeID    uint64
-	isInternal bool
+	storeID   uint64
+	groupName string
 }
 
 type sendReqCounterCacheValue struct {
@@ -513,6 +513,10 @@ func (c *RPCClient) updateTiKVSendReqHistogram(req *tikvrpc.Request, resp *tikvr
 	secs := elapsed.Seconds()
 	storeID := req.Context.GetPeer().GetStoreId()
 	isInternal := util.IsInternalRequest(req.GetRequestSource())
+	groupName := ""
+	if req.Context.ResourceControlContext != nil {
+		groupName = req.Context.ResourceControlContext.ResourceGroupName
+	}
 
 	histKey := sendReqHistCacheKey{
 		req.Type,
@@ -565,14 +569,14 @@ func (c *RPCClient) updateTiKVSendReqHistogram(req *tikvrpc.Request, resp *tikvr
 		if totalRpcWallTimeNs > 0 {
 			cacheKey := rpcNetLatencyCacheKey{
 				storeID,
-				isInternal,
+				groupName,
 			}
 			latHist, ok := rpcNetLatencyHistCache.Load(cacheKey)
 			if !ok {
 				if len(storeIDStr) == 0 {
 					storeIDStr = strconv.FormatUint(storeID, 10)
 				}
-				latHist = metrics.TiKVRPCNetLatencyHistogram.WithLabelValues(storeIDStr, strconv.FormatBool(isInternal))
+				latHist = metrics.TiKVRPCNetLatencyHistogram.WithLabelValues(storeIDStr, groupName)
 				rpcNetLatencyHistCache.Store(cacheKey, latHist)
 			}
 			latency := elapsed - time.Duration(totalRpcWallTimeNs)*time.Nanosecond

@@ -188,7 +188,7 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 			Help:        "Bucketed histogram of time difference between TiDB and TiKV.",
 			Buckets:     prometheus.ExponentialBuckets(5e-5, 2, 22), // 50us ~ 105s
 			ConstLabels: constLabels,
-		}, []string{LblStore, LblScope})
+		}, []string{LblStore, "group"})
 
 	TiKVCoprocessorHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
