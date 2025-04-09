@@ -408,7 +408,7 @@ func (c *pdClient) ListResourceGroups(ctx context.Context, opts ...pd.GetResourc
 	return nil, nil
 }
 
-func (c *pdClient) GetResourceGroup(ctx context.Context, resourceGroupName string, opts ...pd.GetResourceGroupOption) (*rmpb.ResourceGroup, error) {
+func (c *pdClient) GetResourceGroup(ctx context.Context, keyspaceID uint32, resourceGroupName string, opts ...pd.GetResourceGroupOption) (*rmpb.ResourceGroup, error) {
 	group, ok := c.groups[resourceGroupName]
 	if !ok {
 		return nil, fmt.Errorf("the group %s does not exist", resourceGroupName)
@@ -424,7 +424,7 @@ func (c *pdClient) ModifyResourceGroup(ctx context.Context, metaGroup *rmpb.Reso
 	return "", nil
 }
 
-func (c *pdClient) DeleteResourceGroup(ctx context.Context, resourceGroupName string) (string, error) {
+func (c *pdClient) DeleteResourceGroup(ctx context.Context, keyspaceID uint32, resourceGroupName string) (string, error) {
 	return "", nil
 }
 
