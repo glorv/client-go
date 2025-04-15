@@ -62,5 +62,5 @@ require (
 
 replace (
 	github.com/pingcap/kvproto => github.com/glorv/kvproto v0.0.0-20250411175709-8779bb69b1f1
-	github.com/tikv/pd/client => github.com/glorv/pd/client v0.0.0-20250411220721-56cbd7446680
+	github.com/tikv/pd/client => github.com/glorv/pd/client v0.0.0-20250415163910-095ff72e0760
 )
